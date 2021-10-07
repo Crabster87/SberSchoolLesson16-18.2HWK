@@ -9,28 +9,19 @@ import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
-import crabster.rudakov.sberschoollesson16hwk.Constants.BACKGROUND_THREAD_NAME
 import crabster.rudakov.sberschoollesson16hwk.Constants.CURRENT_TIMER_READING
 import crabster.rudakov.sberschoollesson16hwk.Constants.LOG_TAG
 import crabster.rudakov.sberschoollesson16hwk.Constants.TOAST_MESSAGE
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.*
 
 class TimerFragment : Fragment() {
 
     private var timerView: TextView? = null
     private var timer: Int = 6
-    private var backgroundHandler: Handler
 
-    //Назначается Handler для потока 'UI'
-    private var uiHandler: Handler = Handler(Looper.getMainLooper())
-
-    init {
-        //Создаётся отдельная нить 'BACKGROUND' для вычисления показаний таймера
-        val backgroundThread = HandlerThread(BACKGROUND_THREAD_NAME)
-        backgroundThread.start()
-        //Назначается Handler для потока 'BACKGROUND', выполняющий логику параллельных вычислений
-        backgroundHandler = TimerHandler(backgroundThread.looper)
-    }
+    //Создаётся 'Executor' с 1 потоком
+    private var executor: ScheduledExecutorService = Executors.newScheduledThreadPool(1)
+    private lateinit var timerFuture: Future<out Any>
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -47,8 +38,16 @@ class TimerFragment : Fragment() {
 
         val buttonStart = view.findViewById<Button>(R.id.button_start)
         buttonStart.setOnClickListener {
-            //Производится добавление значения показания таймера в очередь сообщений потока 'BACKGROUND'
-            backgroundHandler.sendEmptyMessage(CALC)
+            //передаётся значение таймера экзекутору
+            timerFuture = executor.scheduleAtFixedRate({
+                if (timer > 0) {
+                    timer--
+                    //Производится добавление сообщения с кодом метода 'updateTimer()' собственному 'Handler' TextView
+                    timerView?.post { updateTimer() }
+                } else {
+                    timerFuture.cancel(true)
+                }
+            }, 0, 1, TimeUnit.SECONDS)
         }
     }
 
@@ -58,8 +57,7 @@ class TimerFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         //Удаляются все работающие задачи
-        backgroundHandler.removeCallbacksAndMessages(null)
-        uiHandler.removeCallbacksAndMessages(null)
+        executor.shutdown()
         //Зануляется ссылка на View для удаления её GC и высвобождения памяти
         timerView = null
     }
@@ -68,36 +66,9 @@ class TimerFragment : Fragment() {
      * Метод устанавливает показание таймера в текстовое поле
      * */
     private fun updateTimer() {
+        Log.d(LOG_TAG, "${Thread.currentThread().name} - $CURRENT_TIMER_READING : $timer")
         timerView?.text = timer.toString()
-    }
-
-    /**
-     * Создаём собственный 'Handler' чтобы избавиться от 'Callback' и работать с идентификаторами сообщений
-     * */
-    private inner class TimerHandler(looper: Looper): Handler(looper) {
-
-        override fun handleMessage(msg: Message) {
-            Log.d(LOG_TAG, "${Thread.currentThread().name} - $CURRENT_TIMER_READING : $timer")
-            when(msg.what) {//Производится проверка идентификатора сообщения
-                CALC -> if (timer > 0) {
-                    timer--
-                    //Производится добавление сообщения с кодом метода 'updateTimer()' в очередь сообщений потока 'UI'
-                    uiHandler.post { updateTimer() }
-                    //Производится добавление показания таймера в очередь сообщений потока 'BACKGROUND' с задержкой в 1 с
-                    backgroundHandler.sendEmptyMessageDelayed(CALC, TimeUnit.SECONDS.toMillis(1))
-                }
-                else {
-                    Toast.makeText(context, TOAST_MESSAGE, Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    /**
-     * Назначается идентификатор сообщения
-     * */
-    private companion object {
-        const val CALC: Int = 0
+        if (timer == 0) Toast.makeText(context, TOAST_MESSAGE, Toast.LENGTH_LONG).show()
     }
 
 }
