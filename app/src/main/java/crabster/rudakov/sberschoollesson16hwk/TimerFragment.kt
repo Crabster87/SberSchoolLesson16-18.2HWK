@@ -1,9 +1,6 @@
 package crabster.rudakov.sberschoollesson16hwk
 
-import android.os.Bundle
-import android.os.Handler
-import android.os.HandlerThread
-import android.os.Looper
+import android.os.*
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -27,15 +24,12 @@ class TimerFragment : Fragment() {
     //Назначается Handler для потока 'UI'
     private var uiHandler: Handler = Handler(Looper.getMainLooper())
 
-    //Создаётся объект 'Runnable'
-    private val countTimer: Runnable = Runnable { countTimer() }
-
     init {
         //Создаётся отдельная нить 'BACKGROUND' для вычисления показаний таймера
         val backgroundThread = HandlerThread(BACKGROUND_THREAD_NAME)
         backgroundThread.start()
         //Назначается Handler для потока 'BACKGROUND', выполняющий логику параллельных вычислений
-        backgroundHandler = Handler(backgroundThread.looper)
+        backgroundHandler = Handler(backgroundThread.looper, TimerCallback())
     }
 
     override fun onCreateView(
@@ -54,7 +48,7 @@ class TimerFragment : Fragment() {
         val buttonStart = view.findViewById<Button>(R.id.button_start)
         buttonStart.setOnClickListener {
             //Производится добавление значения показания таймера в очередь сообщений потока 'BACKGROUND'
-            backgroundHandler.post(countTimer)
+            backgroundHandler.sendEmptyMessage(CALC)
         }
     }
 
@@ -65,26 +59,9 @@ class TimerFragment : Fragment() {
         super.onDestroyView()
         //Удаляются все работающие задачи
         backgroundHandler.removeCallbacksAndMessages(null)
+        uiHandler.removeCallbacksAndMessages(null)
         //Зануляется ссылка на View для удаления её GC и высвобождения памяти
         timerView = null
-    }
-
-    /**
-     * Метод задаёт логику подсчёта показаний таймера
-     * */
-    private fun countTimer() {
-        Log.d(LOG_TAG, "${Thread.currentThread().name} - $CURRENT_TIMER_READING : $timer")
-        if (timer > 0) {
-            timer--
-            //Производится добавление объекта 'Runnable' в очередь сообщений потока 'UI'
-            uiHandler.post { updateTimer() }
-            //Производится добавление показания таймера в очередь сообщений потока 'BACKGROUND' с задержкой в 1 с
-            backgroundHandler.postDelayed(countTimer, TimeUnit.SECONDS.toMillis(1))
-        } else {
-            Toast.makeText(context, TOAST_MESSAGE, Toast.LENGTH_LONG).show()
-            //Останавливается поток
-            Looper.myLooper()?.quitSafely()
-        }
     }
 
     /**
@@ -94,4 +71,37 @@ class TimerFragment : Fragment() {
         timerView?.text = timer.toString()
     }
 
+    /**
+     * Создаём класс, который будет передаваться в сообщениях как 'Callback' и позволит отказаться
+     * от 'Runnable' и работать с идентификаторами сообщений
+     * */
+    private inner class TimerCallback: Handler.Callback {
+
+        override fun handleMessage(msg: Message): Boolean {
+            Log.d(LOG_TAG, "${Thread.currentThread().name} - $CURRENT_TIMER_READING : $timer")
+            when(msg.what) {//Производится проверка идентификатора сообщения
+                CALC -> if (timer > 0) {
+                    timer--
+                    //Производится добавление сообщения с кодом метода 'updateTimer()' в очередь сообщений потока 'UI'
+                    uiHandler.post { updateTimer() }
+                    //Производится добавление показания таймера в очередь сообщений потока 'BACKGROUND' с задержкой в 1 с
+                    backgroundHandler.sendEmptyMessageDelayed(CALC, TimeUnit.SECONDS.toMillis(1))
+                    return true
+                }
+                else {
+                    Toast.makeText(context, TOAST_MESSAGE, Toast.LENGTH_LONG).show()
+                }
+            }
+            return false
+        }
+    }
+
+    /**
+     * Назначается идентификатор сообщения
+     * */
+    private companion object {
+        const val CALC: Int = 0
+    }
+
 }
+
