@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 class TimerFragment : Fragment() {
 
     private var timerView: TextView? = null
-    private var timer: Int = 60
+    private var timer: Int = 6
     private var backgroundHandler: Handler
 
     //Назначается Handler для потока 'UI'
@@ -29,7 +29,7 @@ class TimerFragment : Fragment() {
         val backgroundThread = HandlerThread(BACKGROUND_THREAD_NAME)
         backgroundThread.start()
         //Назначается Handler для потока 'BACKGROUND', выполняющий логику параллельных вычислений
-        backgroundHandler = Handler(backgroundThread.looper, TimerCallback())
+        backgroundHandler = TimerHandler(backgroundThread.looper)
     }
 
     override fun onCreateView(
@@ -72,12 +72,11 @@ class TimerFragment : Fragment() {
     }
 
     /**
-     * Создаём класс, который будет передаваться в сообщениях как 'Callback' и позволит отказаться
-     * от 'Runnable' и работать с идентификаторами сообщений
+     * Создаём собственный 'Handler' чтобы избавиться от 'Callback' и работать с идентификаторами сообщений
      * */
-    private inner class TimerCallback: Handler.Callback {
+    private inner class TimerHandler(looper: Looper): Handler(looper) {
 
-        override fun handleMessage(msg: Message): Boolean {
+        override fun handleMessage(msg: Message) {
             Log.d(LOG_TAG, "${Thread.currentThread().name} - $CURRENT_TIMER_READING : $timer")
             when(msg.what) {//Производится проверка идентификатора сообщения
                 CALC -> if (timer > 0) {
@@ -86,13 +85,11 @@ class TimerFragment : Fragment() {
                     uiHandler.post { updateTimer() }
                     //Производится добавление показания таймера в очередь сообщений потока 'BACKGROUND' с задержкой в 1 с
                     backgroundHandler.sendEmptyMessageDelayed(CALC, TimeUnit.SECONDS.toMillis(1))
-                    return true
                 }
                 else {
                     Toast.makeText(context, TOAST_MESSAGE, Toast.LENGTH_LONG).show()
                 }
             }
-            return false
         }
     }
 
