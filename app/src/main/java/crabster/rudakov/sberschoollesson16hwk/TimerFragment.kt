@@ -1,9 +1,6 @@
 package crabster.rudakov.sberschoollesson16hwk
 
 import android.os.Bundle
-import android.os.Handler
-import android.os.HandlerThread
-import android.os.Looper
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -12,31 +9,20 @@ import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
-import crabster.rudakov.sberschoollesson16hwk.Constants.BACKGROUND_THREAD_NAME
-import crabster.rudakov.sberschoollesson16hwk.Constants.CURRENT_TIMER_READING
 import crabster.rudakov.sberschoollesson16hwk.Constants.LOG_TAG
 import crabster.rudakov.sberschoollesson16hwk.Constants.TOAST_MESSAGE
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.core.Observer
+import io.reactivex.rxjava3.disposables.Disposable
+import io.reactivex.rxjava3.schedulers.Schedulers
 import java.util.concurrent.TimeUnit
 
 class TimerFragment : Fragment() {
 
     private var timerView: TextView? = null
-    private var timer: Int = 60
-    private var backgroundHandler: Handler
-
-    //Назначается Handler для потока 'UI'
-    private var uiHandler: Handler = Handler(Looper.getMainLooper())
-
-    //Создаётся объект 'Runnable'
-    private val countTimer: Runnable = Runnable { countTimer() }
-
-    init {
-        //Создаётся отдельная нить 'BACKGROUND' для вычисления показаний таймера
-        val backgroundThread = HandlerThread(BACKGROUND_THREAD_NAME)
-        backgroundThread.start()
-        //Назначается Handler для потока 'BACKGROUND', выполняющий логику параллельных вычислений
-        backgroundHandler = Handler(backgroundThread.looper)
-    }
+    private var timer: Int = 10
+    private var disposable: Disposable? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -53,45 +39,42 @@ class TimerFragment : Fragment() {
 
         val buttonStart = view.findViewById<Button>(R.id.button_start)
         buttonStart.setOnClickListener {
-            //Производится добавление значения показания таймера в очередь сообщений потока 'BACKGROUND'
-            backgroundHandler.post(countTimer)
+            getObservable(timer)
+                .subscribeOn(Schedulers.computation())  //Переключаем все операции в поток к ланировщику для математических вычислений
+                .observeOn(AndroidSchedulers.mainThread())  //Планировщик для выполнения задач в UI-потоке, для модификации UI
+                .subscribe(getObserver())  //Подписываем Observer
         }
     }
 
-    /**
-     * Переопределяем данный метод с целью закрытия ресурсов по окончании работы приложения
-     * */
+    private fun getObservable(_time: Int): Observable<Int> {  //Создаём Cold-источник, который эмитит с заданным интервалом
+        var time = _time + 1
+        return Observable.interval(0, 1, TimeUnit.SECONDS)
+            .map { --time }  //Отнимаем 1 у всех элементов
+            .take(time.toLong())  //Берем первые time количество элементов
+    }
+
+    private fun getObserver(): Observer<Int> {
+        val observer: Observer<Int> = object : Observer<Int> {
+            override fun onSubscribe(d: Disposable) {
+                disposable = d
+            }
+            override fun onNext(value: Int) {
+                timer = value
+                timerView?.text = timer.toString()
+                Log.d(LOG_TAG, "${Thread.currentThread().name} - $Constants.CURRENT_TIMER_READING : $timer")
+            }
+            override fun onError(e: Throwable) {}
+            override fun onComplete() {
+                Toast.makeText(context, TOAST_MESSAGE, Toast.LENGTH_LONG).show()
+            }
+        }
+        return observer
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
-        //Удаляются все работающие задачи
-        backgroundHandler.removeCallbacksAndMessages(null)
-        //Зануляется ссылка на View для удаления её GC и высвобождения памяти
         timerView = null
-    }
-
-    /**
-     * Метод задаёт логику подсчёта показаний таймера
-     * */
-    private fun countTimer() {
-        Log.d(LOG_TAG, "${Thread.currentThread().name} - $CURRENT_TIMER_READING : $timer")
-        if (timer > 0) {
-            timer--
-            //Производится добавление объекта 'Runnable' в очередь сообщений потока 'UI'
-            uiHandler.post { updateTimer() }
-            //Производится добавление показания таймера в очередь сообщений потока 'BACKGROUND' с задержкой в 1 с
-            backgroundHandler.postDelayed(countTimer, TimeUnit.SECONDS.toMillis(1))
-        } else {
-            Toast.makeText(context, TOAST_MESSAGE, Toast.LENGTH_LONG).show()
-            //Останавливается поток
-            Looper.myLooper()?.quitSafely()
-        }
-    }
-
-    /**
-     * Метод устанавливает показание таймера в текстовое поле
-     * */
-    private fun updateTimer() {
-        timerView?.text = timer.toString()
+        disposable?.dispose()  //Отписываемся при потере контекста
     }
 
 }
