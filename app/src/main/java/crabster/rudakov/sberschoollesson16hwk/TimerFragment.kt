@@ -15,7 +15,6 @@ import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.core.Observable
 import io.reactivex.rxjava3.core.Observer
 import io.reactivex.rxjava3.disposables.Disposable
-import io.reactivex.rxjava3.schedulers.Schedulers
 import java.util.concurrent.TimeUnit
 
 class TimerFragment : Fragment() {
@@ -40,26 +39,26 @@ class TimerFragment : Fragment() {
         val buttonStart = view.findViewById<Button>(R.id.button_start)
         buttonStart.setOnClickListener {
             getObservable(timer)
-                .subscribeOn(Schedulers.computation())  //Переключаем все операции в поток к ланировщику для математических вычислений
                 .observeOn(AndroidSchedulers.mainThread())  //Планировщик для выполнения задач в UI-потоке, для модификации UI
                 .subscribe(getObserver())  //Подписываем Observer
         }
     }
 
-    private fun getObservable(_time: Int): Observable<Int> {  //Создаём Cold-источник, который эмитит с заданным интервалом
+    private fun getObservable(_time: Int): Observable<String> {  //Создаём Cold-источник, который эмитит с заданным интервалом
         var time = _time + 1
         return Observable.interval(0, 1, TimeUnit.SECONDS)
             .map { --time }  //Отнимаем 1 у всех элементов
+            .map { time.toString() }  //Преобразуем значения таймера к String
             .take(time.toLong())  //Берем первые time количество элементов
     }
 
-    private fun getObserver(): Observer<Int> {
-        val observer: Observer<Int> = object : Observer<Int> {
+    private fun getObserver(): Observer<String> {
+        val observer: Observer<String> = object : Observer<String> {
             override fun onSubscribe(d: Disposable) {
                 disposable = d
             }
-            override fun onNext(value: Int) {
-                timer = value
+            override fun onNext(value: String) {
+                timer = Integer.valueOf(value)
                 timerView?.text = timer.toString()
                 Log.d(LOG_TAG, "${Thread.currentThread().name} - $Constants.CURRENT_TIMER_READING : $timer")
             }
